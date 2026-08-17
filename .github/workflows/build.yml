@@ -203,17 +203,17 @@ jobs:
 
           cat config/plugins.json
 
-        - name: 源码和 feeds 准备
-          run: |
-           echo "📥 克隆 ImmortalWrt $REPO_BRANCH ($SOURCE_COMMIT)..."
-           rm -rf "$SOURCE_DIR"
-           git clone -b "$REPO_BRANCH" --single-branch --depth=1 "$REPO_URL" "$SOURCE_DIR"
-           cd "$SOURCE_DIR"
+      - name: 源码和 feeds 准备
+        run: |
+          echo "📥 克隆 ImmortalWrt $REPO_BRANCH ($SOURCE_COMMIT)..."
+          rm -rf "$SOURCE_DIR"
+          git clone -b "$REPO_BRANCH" --single-branch --depth=1 "$REPO_URL" "$SOURCE_DIR"
+          cd "$SOURCE_DIR"
 
-           if [ "$(git rev-parse HEAD)" != "$SOURCE_COMMIT" ]; then
-             echo "❌ 上游分支已变更；期望 $SOURCE_COMMIT，实际 $(git rev-parse HEAD)"
-             exit 1
-           fi
+          if [ "$(git rev-parse HEAD)" != "$SOURCE_COMMIT" ]; then
+            echo "❌ 上游分支已变更；期望 $SOURCE_COMMIT，实际 $(git rev-parse HEAD)"
+            exit 1
+          fi
 
           if [ "$(jq -r '.enable_mtk_t7xx // false' "$GITHUB_WORKSPACE/config/plugins.json")" = "true" ]; then
             KERNEL_PATCHVER=$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/x86/Makefile | head -n 1)
