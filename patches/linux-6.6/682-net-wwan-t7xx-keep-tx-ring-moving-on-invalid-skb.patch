@@ -1,0 +1,141 @@
+From: immortalwrt-x86-64-fm350-pcie <noreply@local>
+Subject: [PATCH] net: wwan: t7xx: contain stale TX completions
+
+Do not accept a DPMAIF hardware read index beyond the outstanding TX
+descriptor interval. A stale or reset hardware index otherwise makes the
+driver release already-cleared bookkeeping entries across the ring.
+
+An invalid TX descriptor bookkeeping entry must also not be retried forever.
+The existing error path runs before advancing the software release index, so
+the same descriptor is repeatedly DMA-unmapped and logged. That turns a
+single bad completion into a permanently stalled TX queue.
+
+Reject impossible hardware read indexes before they alter the software
+completion state. Check the bookkeeping before touching its DMA mapping,
+rate-limit the error, and continue releasing an invalid descriptor only as a
+last-resort containment path. Do not increase the free descriptor budget for
+an invalid completion, since it may be a duplicate hardware completion rather
+than a newly released buffer.
+
+---
+ drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 59 insertions(+), 11 deletions(-)
+
+--- a/drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c
++++ b/drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c
+@@ -53,24 +53,44 @@ static unsigned int t7xx_dpmaif_update_drb_rd_idx(struct dpmaif_ctrl *dpmaif_ctr
+ {
+ 	struct dpmaif_tx_queue *txq = &dpmaif_ctrl->txq[q_num];
+-	unsigned int old_sw_rd_idx, new_hw_rd_idx, drb_cnt;
++	unsigned int old_sw_rd_idx, new_hw_rd_idx, drb_cnt;
++	unsigned int completed_cnt, reserved_cnt, release_idx, write_idx;
+ 	unsigned long flags;
+ 
+ 	if (!txq->que_started)
+ 		return 0;
+ 
+-	old_sw_rd_idx = txq->drb_rd_idx;
+ 	new_hw_rd_idx = t7xx_dpmaif_ul_get_rd_idx(&dpmaif_ctrl->hw_info, q_num);
+ 	if (new_hw_rd_idx >= DPMAIF_DRB_LIST_LEN) {
+ 		dev_err(dpmaif_ctrl->dev, "Out of range read index: %u\n", new_hw_rd_idx);
+ 		return 0;
+ 	}
+ 
++	spin_lock_irqsave(&txq->tx_lock, flags);
++	release_idx = txq->drb_release_rd_idx;
++	write_idx = txq->drb_wr_idx;
++	old_sw_rd_idx = txq->drb_rd_idx;
++	completed_cnt = t7xx_ring_buf_rd_wr_count(txq->drb_size_cnt,
++						      txq->drb_release_rd_idx, new_hw_rd_idx,
++						      DPMAIF_READ);
++	reserved_cnt = t7xx_ring_buf_rd_wr_count(txq->drb_size_cnt,
++						     txq->drb_release_rd_idx, txq->drb_wr_idx,
++						     DPMAIF_READ);
++	if (unlikely(completed_cnt > reserved_cnt)) {
++		spin_unlock_irqrestore(&txq->tx_lock, flags);
++		dev_err_ratelimited(dpmaif_ctrl->dev,
++					    "txq%u: rejecting HW read index %u (sw=%u rel=%u wr=%u "
++					    "completed=%u reserved=%u)\n",
++					    q_num, new_hw_rd_idx, old_sw_rd_idx,
++					    release_idx, write_idx,
++					    completed_cnt, reserved_cnt);
++		return 0;
++	}
++
+ 	if (old_sw_rd_idx <= new_hw_rd_idx)
+ 		drb_cnt = new_hw_rd_idx - old_sw_rd_idx;
+ 	else
+ 		drb_cnt = txq->drb_size_cnt - old_sw_rd_idx + new_hw_rd_idx;
+ 
+-	spin_lock_irqsave(&txq->tx_lock, flags);
+ 	txq->drb_rd_idx = new_hw_rd_idx;
+ 	spin_unlock_irqrestore(&txq->tx_lock, flags);
+ 
+@@ -96,31 +116,59 @@ static unsigned int t7xx_dpmaif_release_tx_buffer(struct dpmaif_ctrl *dpmaif_ctr
+ 	spin_unlock_irqrestore(&txq->tx_lock, flags);
+ 
+ 	for (i = 0; i < release_cnt; i++) {
++		bool invalid_skb = false;
++
+ 		cur_drb = drb_base + cur_idx;
+ 		if (FIELD_GET(DRB_HDR_DTYP, le32_to_cpu(cur_drb->header)) == DES_DTYP_PD) {
+ 			cur_drb_skb = drb_skb_base + cur_idx;
++			if (unlikely(!cur_drb_skb->skb)) {
++				unsigned int rel_idx, rd_idx, wr_idx, hw_rd_idx;
++				unsigned int completed, pending;
++				u32 header = le32_to_cpu(cur_drb->header);
++				int tx_budget;
++
++				spin_lock_irqsave(&txq->tx_lock, flags);
++				rel_idx = txq->drb_release_rd_idx;
++				rd_idx = txq->drb_rd_idx;
++				wr_idx = txq->drb_wr_idx;
++				tx_budget = atomic_read(&txq->tx_budget);
++				spin_unlock_irqrestore(&txq->tx_lock, flags);
++
++				hw_rd_idx = t7xx_dpmaif_ul_get_rd_idx(&dpmaif_ctrl->hw_info, q_num);
++				completed = t7xx_ring_buf_rd_wr_count(drb_cnt, rel_idx, rd_idx,
++									      DPMAIF_READ);
++				pending = t7xx_ring_buf_rd_wr_count(drb_cnt, rel_idx, wr_idx,
++									    DPMAIF_READ);
++				dev_err_ratelimited(dpmaif_ctrl->dev,
++						    "txq%u: invalid skb at DRB %u (rel=%u rd=%u hw=%u wr=%u "
++						    "completed=%u pending=%u release=%u/%u budget=%d hdr=%#08x dma=%pad len=%u)\n",
++						    q_num, cur_idx, rel_idx, rd_idx, hw_rd_idx, wr_idx,
++						    completed, pending, i, release_cnt, tx_budget, header,
++						    &cur_drb_skb->bus_addr, cur_drb_skb->data_len);
++				invalid_skb = true;
++				goto next_drb;
++			}
++
+ 			if (!cur_drb_skb->is_msg)
+ 				dma_unmap_single(dpmaif_ctrl->dev, cur_drb_skb->bus_addr,
+ 						 cur_drb_skb->data_len, DMA_TO_DEVICE);
+ 
+-			if (!FIELD_GET(DRB_HDR_CONT, le32_to_cpu(cur_drb->header))) {
+-				if (!cur_drb_skb->skb) {
+-					dev_err(dpmaif_ctrl->dev,
+-						"txq%u: DRB check fail, invalid skb\n", q_num);
+-					continue;
+-				}
+-
++			if (!FIELD_GET(DRB_HDR_CONT, le32_to_cpu(cur_drb->header)))
+ 				dev_kfree_skb_any(cur_drb_skb->skb);
+-			}
+ 
+ 			cur_drb_skb->skb = NULL;
+ 		}
+ 
++	next_drb:
++
+ 		spin_lock_irqsave(&txq->tx_lock, flags);
+ 		cur_idx = t7xx_ring_buf_get_next_wr_idx(drb_cnt, cur_idx);
+ 		txq->drb_release_rd_idx = cur_idx;
+ 		spin_unlock_irqrestore(&txq->tx_lock, flags);
+ 
++		if (invalid_skb)
++			continue;
++
+ 		if (atomic_inc_return(&txq->tx_budget) > txq->drb_size_cnt / 8)
+ 			cb->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_IRQ, txq->index);
+ 	}

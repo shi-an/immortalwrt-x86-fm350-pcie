@@ -1,0 +1,25 @@
+From: Shiming Cheng <shiming.cheng@mediatek.com>
+Date: Thu, 9 Jul 2026 01:47:04 +0800
+Subject: [PATCH] net: gro: fix double aggregation of flush-marked skbs
+
+The generic 6.6 GRO fraglist backport moves skb_gro_receive_list() from
+udp_offload.c to gro.c.  Keep flush-marked sk_buffs out of a second
+aggregation, otherwise an existing frag_list can be chained again and
+later crash software UDP GSO segmentation.
+
+This is the 6.6 backport of upstream commit e751256486d0ded20f5a9f9863467f1dce65142f.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Shiming Cheng <shiming.cheng@mediatek.com>
+---
+ net/core/gro.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+--- a/net/core/gro.c
++++ b/net/core/gro.c
+@@ -230,3 +230,4 @@ int skb_gro_receive_list(struct sk_buff
+ {
+-	if (unlikely(p->len + skb->len >= 65536))
++	if (unlikely(p->len + skb->len >= 65536 ||
++		     NAPI_GRO_CB(skb)->flush))
+ 		return -E2BIG;
