@@ -591,7 +591,7 @@ jobs:
           verify_enabled_pkg "FM350-GL umbim" "umbim" "enable_mtk_t7xx"
           verify_enabled_pkg "FM350-GL mbimcli" "mbim-utils" "enable_mtk_t7xx"
 
-          for pkg in irqbalance ethtool smartmontools pciutils usbutils parted resize2fs losetup \
+          for pkg in irqbalance ethtool kmod-netconsole smartmontools pciutils usbutils parted resize2fs losetup \
             luci-app-sqm sqm-scripts kmod-sched kmod-sched-cake kmod-tcp-bbr; do
             verify_static_pkg "$pkg"
           done

@@ -39,6 +39,10 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 
 固件同时提供 QModem Next 与原生 MBIM 命令行工具。不要让 QModem 与其他 MBIM netifd 配置同时管理同一个模块控制口，否则状态查询可能互相抢占。
 
+## 崩溃日志
+
+镜像固定包含 `kmod-netconsole`。模块会自动加载，但接收端的 LAN IP 和 MAC 必须在复现前通过 `rmmod netconsole` 后的 `modprobe netconsole netconsole=...` 设置，不能使用固定的通用目标地址。
+
 ## 构建与下载
 
 在 Actions 中运行 `Build ImmortalWrt x86 FM350-GL PCIe`。Release 提供完整 x86 `combined` 镜像、manifest 和校验文件；不会单独分发内核模块，因为 `mtk_t7xx.ko` 必须与固件的精确内核 ABI 匹配。
