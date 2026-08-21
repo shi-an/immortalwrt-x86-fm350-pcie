@@ -232,7 +232,8 @@ jobs:
             GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/681-net-gro-fix-double-aggregation-flush-marked-skbs.patch"
             T7XX_TX_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch"
             GRO_LINEAR_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/683-net-gro-check-linear-data-before-fraglist-pull.patch"
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ]; then
+            T7XX_RX_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/684-net-wwan-t7xx-fix-rx-buf-alloc-off-by-one.patch"
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$T7XX_RX_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -247,7 +248,8 @@ jobs:
             install -m 0644 "$GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$T7XX_TX_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GRO_LINEAR_BACKPORT" "$GENERIC_PENDING_DIR/"
-            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush 与 T7xx TX ring 修复（位于 680 之后）"
+            install -m 0644 "$T7XX_RX_BACKPORT" "$GENERIC_PENDING_DIR/"
+            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring 与 RX 回收修复（位于 680 之后）"
           fi
 
           cat > feeds.conf.default << EOF
@@ -653,6 +655,11 @@ jobs:
             KERNEL_T7XX_TX_FILE="$KERNEL_T7XX_DIR/t7xx_hif_dpmaif_tx.c"
             if ! grep -q 'invalid skb at DRB' "$KERNEL_T7XX_TX_FILE"; then
               echo "❌ 682 T7xx TX ring 修复未进入实际内核源码"
+              exit 1
+            fi
+            KERNEL_T7XX_RX_FILE="$KERNEL_T7XX_DIR/t7xx_hif_dpmaif_rx.c"
+            if ! grep -Fq 'while (i--)' "$KERNEL_T7XX_RX_FILE"; then
+              echo "❌ 684 T7xx RX 回收修复未进入实际内核源码"
               exit 1
             fi
             echo "🔎 校验官方 T7xx NAPI/RX 修复..."
