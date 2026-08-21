@@ -32,6 +32,7 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 
 - `681-net-gro-fix-double-aggregation-flush-marked-skbs.patch`：防止 UDP fraglist GRO 的 flush 标记被重复聚合。
 - `682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch`：拒绝不在已提交描述符区间内的硬件 TX 读指针，防止旧 completion 反复释放已经清空的 skb bookkeeping。
+- `683-net-gro-check-linear-data-before-fraglist-pull.patch`：在 fraglist GRO 调用 `skb_pull()` 前验证线性数据，不满足时丢弃该次聚合，避免 malformed skb 进入 UDP GSO 分段路径。
 
 `682` 是异常 completion 的遏制与诊断措施，不代表已经修复 FM350-GL、PCIe 链路或模组固件导致异常读指针的根因。
 

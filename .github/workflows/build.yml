@@ -231,7 +231,8 @@ jobs:
             GENERIC_PENDING_DIR="target/linux/generic/pending-6.6"
             GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/681-net-gro-fix-double-aggregation-flush-marked-skbs.patch"
             T7XX_TX_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch"
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ]; then
+            GRO_LINEAR_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/683-net-gro-check-linear-data-before-fraglist-pull.patch"
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -245,7 +246,8 @@ jobs:
             fi
             install -m 0644 "$GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$T7XX_TX_BACKPORT" "$GENERIC_PENDING_DIR/"
-            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 与 T7xx TX ring 修复（位于 680 之后）"
+            install -m 0644 "$GRO_LINEAR_BACKPORT" "$GENERIC_PENDING_DIR/"
+            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush 与 T7xx TX ring 修复（位于 680 之后）"
           fi
 
           cat > feeds.conf.default << EOF
@@ -633,13 +635,14 @@ jobs:
               exit 1
             fi
             if ! awk '
-              /skb_gro_receive_list\(struct sk_buff \*p/ { in_fn=1; has_len=0; has_flush=0 }
+              /skb_gro_receive_list\(struct sk_buff \*p/ { in_fn=1; has_len=0; has_flush=0; has_pull=0 }
               in_fn && /p->len \+ skb->len >= 65536/ { has_len=1 }
               in_fn && /NAPI_GRO_CB\(skb\)->flush/ { has_flush=1 }
-              in_fn && /^}/ { if (has_len && has_flush) found=1; in_fn=0 }
+              in_fn && /pskb_may_pull\(skb, skb_gro_offset\(skb\)\)/ { has_pull=1 }
+              in_fn && /^}/ { if (has_len && has_flush && has_pull) found=1; in_fn=0 }
               END { exit(found ? 0 : 1) }
             ' "$KERNEL_GRO_FILE"; then
-              echo "❌ 681 UDP GRO backport 未进入实际内核源码"
+              echo "❌ 681/683 GRO backport 未进入实际内核源码"
               exit 1
             fi
 

@@ -1,0 +1,35 @@
+From: HanQuan <eilaimemedsnaimel@gmail.com>
+Date: Thu, 4 Jun 2026 14:46:25 +0000
+Subject: [PATCH] net: add pskb_may_pull() to skb_gro_receive_list()
+
+The 6.6 TCP fraglist GRO backport calls skb_pull() after parsing the
+incoming skb.  With napi_gro_frags(), the skb can have all packet data in
+page fragments while skb_gro_offset() is non-zero.  Calling skb_pull()
+without first making that data linear can leave an invalid skb and later
+crash UDP GSO fraglist segmentation.
+
+This is the 6.6 backport of upstream commit f2bb343454445409a5b6dec213567267b05d79d.
+Keep the flush guard from 681 and reject the skb before it is linked into
+the fraglist when the pull precondition cannot be satisfied.
+
+Fixes: 8d95dc474f85 ("net: add code for TCP fraglist GRO")
+Cc: stable@vger.kernel.org
+Signed-off-by: HanQuan <eilaimemedsnaimel@gmail.com>
+---
+ net/core/gro.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+--- a/net/core/gro.c
++++ b/net/core/gro.c
+@@ -230,6 +230,11 @@ int skb_gro_receive_list(struct sk_buff
+ 	if (unlikely(p->len + skb->len >= 65536 ||
+ 		     NAPI_GRO_CB(skb)->flush))
+ 		return -E2BIG;
++
++	if (!pskb_may_pull(skb, skb_gro_offset(skb))) {
++		NAPI_GRO_CB(skb)->flush = 1;
++		return -ENOMEM;
++	}
+ 
+ 	if (NAPI_GRO_CB(p)->last == p)
+ 		skb_shinfo(p)->frag_list = skb;
