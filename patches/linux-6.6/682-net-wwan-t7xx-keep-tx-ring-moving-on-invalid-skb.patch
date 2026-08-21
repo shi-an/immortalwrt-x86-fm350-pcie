@@ -10,6 +10,11 @@ The existing error path runs before advancing the software release index, so
 the same descriptor is repeatedly DMA-unmapped and logged. That turns a
 single bad completion into a permanently stalled TX queue.
 
+Do not walk an empty TX ring. The min_not_zero() helper treats a zero
+completion count as "no limit" and returns the budget, so equal software and
+hardware pointers can make the release path walk the entire 6144-entry ring.
+Use min() so an empty ring releases zero descriptors.
+
 Reject impossible hardware read indexes before they alter the software
 completion state. Check the bookkeeping before touching its DMA mapping,
 rate-limit the error, and continue releasing an invalid descriptor only as a
@@ -18,8 +23,8 @@ an invalid completion, since it may be a duplicate hardware completion rather
 than a newly released buffer.
 
 ---
- drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c | 70 +++++++++++++++++++++++++++++++++++++++++++++++++++-------
- 1 file changed, 59 insertions(+), 11 deletions(-)
+ drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c | 72 +++++++++++++++++++++++++++++++++++++++++++++++++++++-------
+ 1 file changed, 60 insertions(+), 12 deletions(-)
 
 --- a/drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c
 +++ b/drivers/net/wwan/t7xx/t7xx_hif_dpmaif_tx.c
@@ -139,3 +144,11 @@ than a newly released buffer.
  		if (atomic_inc_return(&txq->tx_budget) > txq->drb_size_cnt / 8)
  			cb->state_notify(dpmaif_ctrl->t7xx_dev, DMPAIF_TXQ_STATE_IRQ, txq->index);
  	}
+@@ -143,6 +191,6 @@ static int t7xx_dpmaif_tx_release(struct dpmaif_ctrl *dpmaif_ctrl,
+ 	rel_cnt = t7xx_ring_buf_rd_wr_count(txq->drb_size_cnt, txq->drb_release_rd_idx,
+ 					    txq->drb_rd_idx, DPMAIF_READ);
+ 
+-	real_rel_cnt = min_not_zero(budget, rel_cnt);
++	real_rel_cnt = min(budget, rel_cnt);
+ 	if (real_rel_cnt)
+ 		real_rel_cnt = t7xx_dpmaif_release_tx_buffer(dpmaif_ctrl, q_num, real_rel_cnt);
