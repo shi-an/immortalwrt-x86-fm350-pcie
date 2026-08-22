@@ -1,0 +1,35 @@
+From: immortalwrt-x86-fm350-pcie <noreply@local>
+Subject: [PATCH] udp: validate packet length in socket GRO
+
+Linux 6.6 validates the UDP length in udp_gro_receive_segment(), but the
+socket GRO path in udp_gro_receive() can still accept a malformed UDP skb.
+That skb can be completed as UDP fraglist GSO and later reach software
+segmentation with invalid geometry, including a NULL frag_list.
+
+Backport the early length check from upstream 8475a3efe6e6 using the helper
+names available in Linux 6.6. Reject the skb before it can be aggregated by
+the socket GRO callback.
+
+Fixes: 9fd1ff5d2ac7 ("udp: Support UDP fraglist GRO/GSO.")
+Cc: stable@vger.kernel.org
+---
+ net/ipv4/udp_offload.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/net/ipv4/udp_offload.c
++++ b/net/ipv4/udp_offload.c
+@@ -653,6 +653,12 @@ struct sk_buff *udp_gro_receive(struct list_head *head, struct sk_buff *skb,
+ 	struct sk_buff *p;
+ 	struct udphdr *uh2;
+ 	unsigned int off = skb_gro_offset(skb);
++	unsigned int ulen;
+ 	int flush = 1;
+ 
++	/* Do not deal with padded or malicious packets, sorry! */
++	ulen = ntohs(uh->len);
++	if (ulen <= sizeof(*uh) || ulen != skb_gro_len(skb))
++		goto out;
++
+ 	/* We can do L4 aggregation only if the packet can't land in a tunnel
+ 	 * otherwise we could corrupt the inner stream. Detecting such packets
+ 	 * cannot be foolproof and the aggregation might still happen in some
