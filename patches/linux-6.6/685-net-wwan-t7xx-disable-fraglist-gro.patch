@@ -2,7 +2,7 @@ From: immortalwrt-x86-64-fm350-pcie <noreply@local>
 Subject: [PATCH] net: wwan: t7xx: disable fraglist GRO on CCMNI
 
 The FM350 CCMNI receive path has triggered malformed UDP fraglist GSO
-packets that later reach skb_segment() and can crash the kernel.  Keep
+packets that later reach skb_segment() and can crash the kernel. Keep
 ordinary GRO enabled, but do not allow fraglist GRO to be enabled on the
 T7xx netdev until the modem receive path is proven to preserve the fraglist
 invariants.
@@ -15,11 +15,7 @@ This is a device-specific containment measure for the FM350-GL PCIe build.
 
 --- a/drivers/net/wwan/t7xx/t7xx_netdev.c
 +++ b/drivers/net/wwan/t7xx/t7xx_netdev.c
-@@ -158,10 +158,17 @@ static void t7xx_ccmni_tx_timeout(struct net_device *dev, unsigned int __always_unused txqueue)
- 	if (atomic_read(&ccmni->usage) > 0)
- 		netif_tx_wake_all_queues(dev);
- }
- 
+@@ -162,1 +162,7 @@ static const struct net_device_ops ccmni_netdev_ops = {
 +static netdev_features_t t7xx_ccmni_fix_features(struct net_device *dev,
 +						  netdev_features_t features)
 +{
@@ -27,9 +23,7 @@ This is a device-specific containment measure for the FM350-GL PCIe build.
 +}
 +
  static const struct net_device_ops ccmni_netdev_ops = {
- 	.ndo_open	  = t7xx_ccmni_open,
- 	.ndo_stop	  = t7xx_ccmni_close,
- 	.ndo_start_xmit   = t7xx_ccmni_start_xmit,
+@@ -166,2 +173,3 @@ static const struct net_device_ops ccmni_netdev_ops = {
  	.ndo_tx_timeout   = t7xx_ccmni_tx_timeout,
 +	.ndo_fix_features = t7xx_ccmni_fix_features,
  };
