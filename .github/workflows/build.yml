@@ -241,8 +241,9 @@ jobs:
             T7XX_TX_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch"
             GRO_LINEAR_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/683-net-gro-check-linear-data-before-fraglist-pull.patch"
             UDP_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/686-net-udp-gro-validate-socket-length.patch"
+            GSO_FRAGLIST_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/687-net-gso-reject-empty-fraglist.patch"
             DISABLE_T7XX_FRAGLIST_GRO=$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ]; then
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -258,6 +259,7 @@ jobs:
             install -m 0644 "$T7XX_TX_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GRO_LINEAR_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$UDP_GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
+            install -m 0644 "$GSO_FRAGLIST_BACKPORT" "$GENERIC_PENDING_DIR/"
             if [ "$DISABLE_T7XX_FRAGLIST_GRO" = "true" ]; then
               T7XX_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/685-net-wwan-t7xx-disable-fraglist-gro.patch"
               if [ ! -f "$T7XX_GRO_BACKPORT" ]; then
@@ -269,7 +271,7 @@ jobs:
             else
               echo "✅ 默认保持 FM350-GL fraglist GRO 开启"
             fi
-            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring 与 UDP 长度校验修复（RX 回收修复已在 6.6.151 上游源码中）"
+            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、UDP 长度与空 fraglist 防护修复（RX 回收修复已在 6.6.151 上游源码中）"
           fi
 
           cat > feeds.conf.default << EOF
@@ -692,6 +694,11 @@ jobs:
               END { exit(found ? 0 : 1) }
             ' "$KERNEL_UDP_GRO_FILE"; then
               echo "❌ 686 UDP socket GRO 长度校验未进入实际内核源码"
+              exit 1
+            fi
+            KERNEL_SKBUFF_FILE="$KERNEL_DIR/net/core/skbuff.c"
+            if ! grep -Fq 'mss == GSO_BY_FRAGS && !list_skb' "$KERNEL_SKBUFF_FILE"; then
+              echo "❌ 687 空 fraglist GSO 防护未进入实际内核源码"
               exit 1
             fi
             if [ "$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")" = "true" ]; then
