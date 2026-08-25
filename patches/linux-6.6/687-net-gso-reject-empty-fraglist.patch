@@ -12,11 +12,13 @@ fraglist GSO and ordinary GSO paths are unchanged.
 This is a defensive Linux 6.6 backport for malformed FM350 receive skbs.
 
 ---
- net/core/skbuff.c | 3 +++
- 1 file changed, 3 insertions(+)
+ net/core/skbuff.c | 2 ++
+ 1 file changed, 2 insertions(+)
 
 --- a/net/core/skbuff.c
 +++ b/net/core/skbuff.c
-@@ -4464,0 +4465,2 @@
+@@ -4537,2 +4537,4 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
+ normal:
 +	if (unlikely(mss == GSO_BY_FRAGS && !list_skb))
 +		return ERR_PTR(-EINVAL);
+ 	headroom = skb_headroom(head_skb);

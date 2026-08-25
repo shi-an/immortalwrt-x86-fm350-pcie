@@ -1,0 +1,52 @@
+From: immortalwrt-x86-fm350-pcie <noreply@local>
+Subject: [PATCH] net: gso: reject exhausted fraglist metadata
+
+skb_segment() can consume the final frag_list entry and continue its
+segmentation loop when malformed skb length metadata claims that more data
+is available. The next iteration then dereferences a NULL list_skb while
+checking skb_headlen(), or while importing the next fraglist entry.
+
+Return an error when a fraglist entry is required but unavailable. Valid
+ordinary GSO and fraglist GSO paths keep the same fast path.
+
+This is a defensive Linux 6.6 backport for malformed FM350 receive skbs.
+
+---
+ net/core/skbuff.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -4552,6 +4552,10 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
+ 		int size;
+ 
+ 		if (unlikely(mss == GSO_BY_FRAGS)) {
++			if (unlikely(!list_skb)) {
++				err = -EINVAL;
++				goto err;
++			}
+ 			len = list_skb->len;
+ 		} else {
+ 			len = head_skb->len - offset;
+@@ -4562,6 +4566,11 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
+ 
+ 		hsize = skb_headlen(head_skb) - offset;
+ 
++		if (hsize <= 0 && i >= nfrags && unlikely(!list_skb)) {
++			err = -EINVAL;
++			goto err;
++		}
++
+ 		if (hsize <= 0 && i >= nfrags && skb_headlen(list_skb) &&
+ 		    (skb_headlen(list_skb) == len || sg)) {
+ 			BUG_ON(skb_headlen(list_skb) > len);
+@@ -4671,4 +4680,8 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
+ 		while (pos < offset + len) {
+ 			if (i >= nfrags) {
++				if (unlikely(!list_skb)) {
++					err = -EINVAL;
++					goto err;
++				}
+ 				if (skb_orphan_frags(list_skb, GFP_ATOMIC) ||
+ 				    skb_zerocopy_clone(nskb, list_skb,
+ 						       GFP_ATOMIC))
