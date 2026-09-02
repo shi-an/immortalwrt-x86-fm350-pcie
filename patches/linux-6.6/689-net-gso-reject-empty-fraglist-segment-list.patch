@@ -1,0 +1,27 @@
+From: immortalwrt-x86-fm350-pcie <noreply@local>
+Subject: [PATCH] net: gso: reject empty fraglist before list segmentation
+
+skb_segment_list() is only valid for SKB_GSO_FRAGLIST packets with a
+non-empty frag_list. If the list is missing, it currently returns the head
+skb after clearing its list pointer. UDP fraglist completion can then treat
+the single skb as a segment list and dereference a missing next segment.
+
+Reject the malformed input before modifying the skb. Valid fraglist GSO and
+ordinary GSO paths are unchanged.
+
+This is a defensive Linux 6.6 backport for malformed FM350 receive skbs.
+
+---
+ net/core/skbuff.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -4349,4 +4349,7 @@ struct sk_buff *skb_segment_list(struct sk_buff *skb,
+ 	struct sk_buff *nskb, *tmp;
+ 	int len_diff, err;
+ 
++	if (unlikely(!list_skb))
++		return ERR_PTR(-EINVAL);
++
+ 	/* Only skb_gro_receive_list generated skbs arrive here */

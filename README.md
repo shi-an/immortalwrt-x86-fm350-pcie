@@ -38,10 +38,11 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 - `686-net-udp-gro-validate-socket-length.patch`：补齐 Linux 6.6 UDP socket GRO 入口的长度校验，拒绝 malformed skb 进入 fraglist GSO 分段路径。
 - `687-net-gso-reject-empty-fraglist.patch`：拒绝 `GSO_BY_FRAGS` 但没有 `frag_list` 的 malformed skb，避免 `skb_segment()` 解引用空指针；不影响合法 fraglist GRO。
 - `688-net-gso-reject-missing-fraglist-entry.patch`：在 `skb_segment()` 处理完最后一个 fraglist 项后验证链表仍存在，拒绝畸形长度元数据触发的第二次空指针解引用；不影响合法 fraglist GRO。
+- `689-net-gso-reject-empty-fraglist-segment-list.patch`：在 `skb_segment_list()` 入口拒绝空 `frag_list`，避免 UDP fraglist 完成路径把单个 skb 当成分段链表访问；不影响合法 fraglist GRO。
 
 `682` 是异常 completion 的遏制与诊断措施，不代表已经修复 FM350-GL、PCIe 链路或模组固件导致异常读指针的根因。
 
-默认构建保持 FM350-GL fraglist GRO 开启，依靠 681、683、686、687 和 688 校验 GRO 输入与 GSO 分段条件。若设备仍出现 `skb_segment()` 崩溃，可在手动工作流中启用 `disable_t7xx_fraglist_gro` 构建应急版本；该选项会应用 685。
+默认构建保持 FM350-GL fraglist GRO 开启，依靠 681、683、686、687、688 和 689 校验 GRO 输入与 GSO 分段条件。若设备仍出现 `skb_segment()` 崩溃，可在手动工作流中启用 `disable_t7xx_fraglist_gro` 构建应急版本；该选项会应用 685。
 
 ## MBIM 使用边界
 

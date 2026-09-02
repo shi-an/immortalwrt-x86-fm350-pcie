@@ -243,8 +243,9 @@ jobs:
             UDP_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/686-net-udp-gro-validate-socket-length.patch"
             GSO_FRAGLIST_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/687-net-gso-reject-empty-fraglist.patch"
             GSO_FRAGLIST_ENTRY_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/688-net-gso-reject-missing-fraglist-entry.patch"
+            GSO_FRAGLIST_SEGMENT_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/689-net-gso-reject-empty-fraglist-segment-list.patch"
             DISABLE_T7XX_FRAGLIST_GRO=$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ]; then
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_SEGMENT_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -262,6 +263,7 @@ jobs:
             install -m 0644 "$UDP_GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_ENTRY_BACKPORT" "$GENERIC_PENDING_DIR/"
+            install -m 0644 "$GSO_FRAGLIST_SEGMENT_BACKPORT" "$GENERIC_PENDING_DIR/"
             if [ "$DISABLE_T7XX_FRAGLIST_GRO" = "true" ]; then
               T7XX_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/685-net-wwan-t7xx-disable-fraglist-gro.patch"
               if [ ! -f "$T7XX_GRO_BACKPORT" ]; then
@@ -707,6 +709,15 @@ jobs:
               END { exit(found ? 0 : 1) }
             ' "$KERNEL_SKBUFF_FILE"; then
               echo "❌ 687/688 fraglist GSO 防护未进入实际 skb_segment() 源码"
+              exit 1
+            fi
+            if ! awk '
+              /^struct sk_buff \*skb_segment_list\(/ { in_fn=1; has_689=0 }
+              in_fn && /unlikely\(!list_skb\)/ { has_689=1 }
+              in_fn && /^}/ { if (has_689) found=1; in_fn=0 }
+              END { exit(found ? 0 : 1) }
+            ' "$KERNEL_SKBUFF_FILE"; then
+              echo "❌ 689 空 fraglist 分段列表防护未进入实际 skb_segment_list() 源码"
               exit 1
             fi
             if [ "$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")" = "true" ]; then
