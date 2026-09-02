@@ -4,15 +4,15 @@
 
 [![Build ImmortalWrt x86 FM350-GL PCIe](https://github.com/shi-an/immortalwrt-x86-64-fm350-pcie/actions/workflows/build.yml/badge.svg)](https://github.com/shi-an/immortalwrt-x86-64-fm350-pcie/actions/workflows/build.yml)
 
-## 固定上游
+## 上游来源
 
 - ImmortalWrt 分支：`openwrt-24.10`
-- 固定提交：`fa66185054014e529e412477777fe73ab69a7c05`
-- 内核：Linux `6.6.151`
+- 源码：每次构建拉取该分支最新提交，并在产物中记录实际 revision
+- 内核：Linux `6.6.x`
 - 目标：`x86/64 generic`
 - 默认 LAN 地址：`192.168.1.1`
 
-工作流会在开始时校验上游提交和内核版本。上游发生变化时构建将主动失败，更新时应同时审查内核补丁上下文，而不是静默跟随分支。
+工作流会在构建开始时解析并拉取上游分支最新 HEAD，仍会校验 Linux 6.6 补丁上下文和修复是否进入实际内核源码。上游补丁栈发生不兼容时，构建应失败并提示重新审查，而不是静默使用错误的补丁。
 
 ## 默认功能
 
@@ -33,7 +33,7 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 - `681-net-gro-fix-double-aggregation-flush-marked-skbs.patch`：防止 UDP fraglist GRO 的 flush 标记被重复聚合。
 - `682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch`：拒绝不在已提交描述符区间内的硬件 TX 读指针，防止旧 completion 反复释放已经清空的 skb bookkeeping。
 - `683-net-gro-check-linear-data-before-fraglist-pull.patch`：在 fraglist GRO 调用 `skb_pull()` 前验证线性数据，不满足时丢弃该次聚合，避免 malformed skb 进入 UDP GSO 分段路径。
-- `684-net-wwan-t7xx-fix-rx-buf-alloc-off-by-one.patch`：记录 T7xx RX 缓冲分配失败路径的 off-by-one 修复；Linux `6.6.151` 已包含该修复，CI 不重复安装。
+- `684-net-wwan-t7xx-fix-rx-buf-alloc-off-by-one.patch`：记录 T7xx RX 缓冲分配失败路径的 off-by-one 修复；当前 Linux 6.6 上游源码已包含该修复，CI 不重复安装。
 - `685-net-wwan-t7xx-disable-fraglist-gro.patch`：可选的 FM350-GL CCMNI 应急遏制补丁；默认不应用，以保留 fraglist GRO 性能，启用工作流中的 `disable_t7xx_fraglist_gro` 后才关闭。
 - `686-net-udp-gro-validate-socket-length.patch`：补齐 Linux 6.6 UDP socket GRO 入口的长度校验，拒绝 malformed skb 进入 fraglist GSO 分段路径。
 - `687-net-gso-reject-empty-fraglist.patch`：拒绝 `GSO_BY_FRAGS` 但没有 `frag_list` 的 malformed skb，避免 `skb_segment()` 解引用空指针；不影响合法 fraglist GRO。

@@ -84,7 +84,6 @@ permissions:
 env:
   REPO_URL: https://github.com/immortalwrt/immortalwrt.git
   REPO_BRANCH: openwrt-24.10
-  SOURCE_COMMIT: fa66185054014e529e412477777fe73ab69a7c05
   SOURCE_DIR: immortalwrt
   LAN_IP: 192.168.1.1
   OFFLINE_ARCH: x86_64
@@ -133,17 +132,27 @@ jobs:
           ccache --set-config=max_size=2G
           ccache --version || true
 
+      - name: 获取上游最新提交
+        id: upstream
+        run: |
+          UPSTREAM_REVISION=$(git ls-remote "$REPO_URL" "refs/heads/$REPO_BRANCH" | awk '{print $1}')
+          if [ -z "$UPSTREAM_REVISION" ]; then
+            echo "❌ 无法获取 ImmortalWrt 上游分支 $REPO_BRANCH 的最新提交"
+            exit 1
+          fi
+          echo "revision=$UPSTREAM_REVISION" >> "$GITHUB_OUTPUT"
+          echo "✅ ImmortalWrt 上游最新提交：$UPSTREAM_REVISION"
+
       - name: 恢复编译缓存
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.SOURCE_DIR }}/dl
-            ${{ env.SOURCE_DIR }}/staging_dir
             ~/.ccache
-          key: ${{ runner.os }}-fm350-pcie-${{ env.SOURCE_COMMIT }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-fm350-pcie-${{ env.SOURCE_COMMIT }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-
-            ${{ runner.os }}-fm350-pcie-${{ env.SOURCE_COMMIT }}-
+            ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-
+            ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-
 
       - name: 生成插件配置
         run: |
@@ -213,15 +222,15 @@ jobs:
 
       - name: 源码和 feeds 准备
         run: |
-          echo "📥 克隆 ImmortalWrt $REPO_BRANCH ($SOURCE_COMMIT)..."
+          echo "📥 克隆 ImmortalWrt $REPO_BRANCH 最新提交..."
           rm -rf "$SOURCE_DIR"
           git clone -b "$REPO_BRANCH" --single-branch --depth=1 "$REPO_URL" "$SOURCE_DIR"
           cd "$SOURCE_DIR"
 
-          if [ "$(git rev-parse HEAD)" != "$SOURCE_COMMIT" ]; then
-            echo "❌ 上游分支已变更；期望 $SOURCE_COMMIT，实际 $(git rev-parse HEAD)"
-            exit 1
-          fi
+          UPSTREAM_REVISION=$(git rev-parse HEAD)
+          printf '%s\n' "$UPSTREAM_REVISION" > "$GITHUB_WORKSPACE/config/source-revision.txt"
+          echo "UPSTREAM_REVISION=$UPSTREAM_REVISION" >> "$GITHUB_ENV"
+          echo "✅ ImmortalWrt 实际源码提交：$UPSTREAM_REVISION"
 
           if [ "$(jq -r '.enable_mtk_t7xx // false' "$GITHUB_WORKSPACE/config/plugins.json")" = "true" ]; then
             KERNEL_PATCHVER=$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/x86/Makefile | head -n 1)
@@ -230,11 +239,11 @@ jobs:
               exit 1
             fi
             KERNEL_RELEASE=$(sed -n 's/^LINUX_VERSION-6\.6 = //p' include/kernel-6.6 | head -n 1)
-            if [ "$KERNEL_RELEASE" != ".151" ]; then
-              echo "❌ x86 工作流预期 Linux 6.6.151，实际为 6.6$KERNEL_RELEASE"
+            if [ -z "$KERNEL_RELEASE" ]; then
+              echo "❌ 未找到 Linux 6.6 内核小版本"
               exit 1
             fi
-            echo "✅ FM350-GL 内核版本确认：Linux 6.6$KERNEL_RELEASE"
+            echo "✅ FM350-GL 内核版本确认：Linux 6.6$KERNEL_RELEASE（随上游分支）"
 
             GENERIC_PENDING_DIR="target/linux/generic/pending-6.6"
             GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/681-net-gro-fix-double-aggregation-flush-marked-skbs.patch"
@@ -275,7 +284,7 @@ jobs:
             else
               echo "✅ 默认保持 FM350-GL fraglist GRO 开启"
             fi
-            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、UDP 长度与 fraglist 耗尽防护修复（RX 回收修复已在 6.6.151 上游源码中）"
+            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、UDP 长度与 fraglist 耗尽防护修复（RX 回收修复已在 Linux 6.6 上游源码中）"
           fi
 
           cat > feeds.conf.default << EOF
@@ -792,12 +801,17 @@ jobs:
             exit 1
           fi
 
+          UPSTREAM_REVISION=$(tr -d '[:space:]' < config/source-revision.txt 2>/dev/null || true)
+          if [ -z "$UPSTREAM_REVISION" ]; then
+            UPSTREAM_REVISION=unknown
+          fi
+
           echo "🎉 **ImmortalWrt x86 FM350-GL PCIe 固件已构建完成**" > artifacts/release_body.md
           echo "" >> artifacts/release_body.md
           echo "📅 时间: $(date '+%Y-%m-%d %H:%M:%S')" >> artifacts/release_body.md
           echo "🔗 运行 ID: ${{ github.run_id }}" >> artifacts/release_body.md
           echo "🏷️ 分支: ${{ env.REPO_BRANCH }}" >> artifacts/release_body.md
-          echo "🔒 源码提交: ${{ env.SOURCE_COMMIT }}" >> artifacts/release_body.md
+          echo "🔒 源码提交: $UPSTREAM_REVISION" >> artifacts/release_body.md
           echo "🌐 默认 LAN IP: ${{ env.LAN_IP }}" >> artifacts/release_body.md
           echo "" >> artifacts/release_body.md
           echo "**⚙️ 启用的功能:**" >> artifacts/release_body.md
@@ -832,7 +846,7 @@ jobs:
           🔗 运行 ID: ${{ github.run_id }}
           🏷️  Build #: ${{ github.run_number }}
           🧱 源码分支: ${{ env.REPO_BRANCH }}
-          🔒 源码提交: ${{ env.SOURCE_COMMIT }}
+          🔒 源码提交: $UPSTREAM_REVISION
           🌐 默认 LAN IP: ${{ env.LAN_IP }}
           💽 目标设备: x86/64 generic
 
