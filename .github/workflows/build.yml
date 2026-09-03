@@ -38,11 +38,6 @@ on:
         required: false
         default: true
         type: boolean
-      disable_t7xx_fraglist_gro:
-        description: '应急：关闭 FM350-GL fraglist GRO（默认保持开启）'
-        required: false
-        default: false
-        type: boolean
       enable_netspeedtest:
         description: '启用 NetSpeedTest'
         required: false
@@ -173,7 +168,6 @@ jobs:
           ENABLE_AT_WEBSERVER=$(normalize_bool "${{ inputs.enable_at_webserver }}")
           ENABLE_QMODEM_NEXT=$(normalize_bool "${{ inputs.enable_qmodem_next }}")
           ENABLE_MTK_T7XX=$(normalize_bool "${{ inputs.enable_mtk_t7xx }}")
-          DISABLE_T7XX_FRAGLIST_GRO=$(normalize_bool "${{ inputs.disable_t7xx_fraglist_gro }}")
           ENABLE_NETSPEEDTEST=$(normalize_bool "${{ inputs.enable_netspeedtest }}")
           ENABLE_UPNP=$(normalize_bool "${{ inputs.enable_upnp }}")
           ENABLE_DOCKERMAN=$(normalize_bool "${{ inputs.enable_dockerman }}")
@@ -194,7 +188,6 @@ jobs:
             --argjson enable_at_webserver "$ENABLE_AT_WEBSERVER" \
             --argjson enable_qmodem_next "$ENABLE_QMODEM_NEXT" \
             --argjson enable_mtk_t7xx "$ENABLE_MTK_T7XX" \
-            --argjson disable_t7xx_fraglist_gro "$DISABLE_T7XX_FRAGLIST_GRO" \
             --argjson enable_netspeedtest "$ENABLE_NETSPEEDTEST" \
             --argjson enable_upnp "$ENABLE_UPNP" \
             --argjson enable_dockerman "$ENABLE_DOCKERMAN" \
@@ -209,7 +202,6 @@ jobs:
               enable_at_webserver: $enable_at_webserver,
               enable_qmodem_next: $enable_qmodem_next,
               enable_mtk_t7xx: $enable_mtk_t7xx,
-              disable_t7xx_fraglist_gro: $disable_t7xx_fraglist_gro,
               enable_netspeedtest: $enable_netspeedtest,
               enable_upnp: $enable_upnp,
               enable_dockerman: $enable_dockerman,
@@ -250,11 +242,9 @@ jobs:
             T7XX_TX_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch"
             GRO_LINEAR_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/683-net-gro-check-linear-data-before-fraglist-pull.patch"
             UDP_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/686-net-udp-gro-validate-socket-length.patch"
-            GSO_FRAGLIST_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/687-net-gso-reject-empty-fraglist.patch"
             GSO_FRAGLIST_ENTRY_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/688-net-gso-reject-missing-fraglist-entry.patch"
             GSO_FRAGLIST_SEGMENT_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/689-net-gso-reject-empty-fraglist-segment-list.patch"
-            DISABLE_T7XX_FRAGLIST_GRO=$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_SEGMENT_BACKPORT" ]; then
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_SEGMENT_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -270,20 +260,8 @@ jobs:
             install -m 0644 "$T7XX_TX_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GRO_LINEAR_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$UDP_GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
-            install -m 0644 "$GSO_FRAGLIST_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_ENTRY_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_SEGMENT_BACKPORT" "$GENERIC_PENDING_DIR/"
-            if [ "$DISABLE_T7XX_FRAGLIST_GRO" = "true" ]; then
-              T7XX_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/685-net-wwan-t7xx-disable-fraglist-gro.patch"
-              if [ ! -f "$T7XX_GRO_BACKPORT" ]; then
-                echo "❌ 未找到可选的 685 fraglist GRO 应急补丁"
-                exit 1
-              fi
-              install -m 0644 "$T7XX_GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
-              echo "⚠️ 已启用 685：FM350-GL fraglist GRO 将被关闭"
-            else
-              echo "✅ 默认保持 FM350-GL fraglist GRO 开启"
-            fi
             echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、UDP 长度与 fraglist 耗尽防护修复（RX 回收修复已在 Linux 6.6 上游源码中）"
           fi
 
@@ -711,13 +689,12 @@ jobs:
             fi
             KERNEL_SKBUFF_FILE="$KERNEL_DIR/net/core/skbuff.c"
             if ! awk '
-              /^struct sk_buff \*skb_segment\(/ { in_fn=1; has_687=0; has_688=0 }
-              in_fn && /mss == GSO_BY_FRAGS && !list_skb/ { has_687=1 }
+              /^struct sk_buff \*skb_segment\(/ { in_fn=1; has_688=0 }
               in_fn && /hsize <= 0 && i >= nfrags && unlikely\(!list_skb\)/ { has_688=1 }
-              in_fn && /^}/ { if (has_687 && has_688) found=1; in_fn=0 }
+              in_fn && /^}/ { if (has_688) found=1; in_fn=0 }
               END { exit(found ? 0 : 1) }
             ' "$KERNEL_SKBUFF_FILE"; then
-              echo "❌ 687/688 fraglist GSO 防护未进入实际 skb_segment() 源码"
+              echo "❌ 688 fraglist GSO 防护未进入实际 skb_segment() 源码"
               exit 1
             fi
             if ! awk '
@@ -728,14 +705,6 @@ jobs:
             ' "$KERNEL_SKBUFF_FILE"; then
               echo "❌ 689 空 fraglist 分段列表防护未进入实际 skb_segment_list() 源码"
               exit 1
-            fi
-            if [ "$(jq -r '.disable_t7xx_fraglist_gro // false' "$GITHUB_WORKSPACE/config/plugins.json")" = "true" ]; then
-              KERNEL_T7XX_NET_FILE="$KERNEL_T7XX_DIR/t7xx_netdev.c"
-              if ! grep -Fq 'ndo_fix_features = t7xx_ccmni_fix_features' "$KERNEL_T7XX_NET_FILE" || \
-                 ! grep -Fq 'features & ~NETIF_F_GRO_FRAGLIST' "$KERNEL_T7XX_NET_FILE"; then
-                echo "❌ 已请求关闭 fraglist GRO，但 685 未进入实际内核源码"
-                exit 1
-              fi
             fi
             echo "🔎 校验官方 T7xx NAPI/RX 修复..."
             (cd "$KERNEL_DIR" && \
