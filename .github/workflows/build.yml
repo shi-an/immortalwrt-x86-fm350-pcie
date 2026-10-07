@@ -244,7 +244,8 @@ jobs:
             UDP_GRO_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/686-net-udp-gro-validate-socket-length.patch"
             GSO_FRAGLIST_ENTRY_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/688-net-gso-reject-missing-fraglist-entry.patch"
             GSO_FRAGLIST_SEGMENT_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/689-net-gso-reject-empty-fraglist-segment-list.patch"
-            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_SEGMENT_BACKPORT" ]; then
+            T7XX_TX_LOG_BACKPORT="$GITHUB_WORKSPACE/patches/linux-6.6/690-net-wwan-t7xx-ratelimit-tx-full-log.patch"
+            if [ ! -f "$GRO_BACKPORT" ] || [ ! -f "$T7XX_TX_BACKPORT" ] || [ ! -f "$GRO_LINEAR_BACKPORT" ] || [ ! -f "$UDP_GRO_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_ENTRY_BACKPORT" ] || [ ! -f "$GSO_FRAGLIST_SEGMENT_BACKPORT" ] || [ ! -f "$T7XX_TX_LOG_BACKPORT" ]; then
               echo "❌ 未找到 FM350-GL 内核 backport 补丁"
               exit 1
             fi
@@ -252,17 +253,18 @@ jobs:
               echo "❌ 未找到 680 GRO fraglist 补丁，拒绝在未知补丁栈上应用 681 backport"
               exit 1
             fi
-            if ! grep -q '^--- a/net/core/gro.c$' "$GENERIC_PENDING_DIR/680-net-add-TCP-fraglist-GRO-support.patch"; then
-              echo "❌ 680 GRO 补丁未将 fraglist GRO 实现移到 net/core/gro.c"
-              exit 1
+            if grep -q '^--- a/net/core/gro.c$' "$GENERIC_PENDING_DIR/680-net-add-TCP-fraglist-GRO-support.patch"; then
+              install -m 0644 "$GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
+            else
+              echo "✅ 680 已使用内核自带的 fraglist GRO，跳过 681；编译前仍校验 flush 防护"
             fi
-            install -m 0644 "$GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$T7XX_TX_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GRO_LINEAR_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$UDP_GRO_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_ENTRY_BACKPORT" "$GENERIC_PENDING_DIR/"
             install -m 0644 "$GSO_FRAGLIST_SEGMENT_BACKPORT" "$GENERIC_PENDING_DIR/"
-            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、UDP 长度与 fraglist 耗尽防护修复（RX 回收修复已在 Linux 6.6 上游源码中）"
+            install -m 0644 "$T7XX_TX_LOG_BACKPORT" "$GENERIC_PENDING_DIR/"
+            echo "✅ 已加入 FM350-GL 专用 6.6 GRO 完整性、flush、T7xx TX ring、TX 满队列日志限速、UDP 长度与 fraglist 耗尽防护修复（RX 回收修复已在 Linux 6.6 上游源码中）"
           fi
 
           cat > feeds.conf.default << EOF
@@ -670,6 +672,17 @@ jobs:
               echo "❌ 682 T7xx TX ring 修复未进入实际内核源码"
               exit 1
             fi
+            KERNEL_T7XX_NETDEV_FILE="$KERNEL_T7XX_DIR/t7xx_netdev.c"
+            if ! awk '
+              /static void t7xx_ccmni_queue_tx_full_notify\(/ { in_fn=1; has_limit=0; has_log=0 }
+              in_fn && /if \(net_ratelimit\(\)\)/ { has_limit=1 }
+              in_fn && /netdev_err\(ccmni->dev, "TX queue %d is full/ { has_log=1 }
+              in_fn && /^}/ { if (has_limit && has_log) found=1; in_fn=0 }
+              END { exit(found ? 0 : 1) }
+            ' "$KERNEL_T7XX_NETDEV_FILE"; then
+              echo "❌ 690 T7xx TX 满队列日志限速修复未进入实际内核源码"
+              exit 1
+            fi
             KERNEL_T7XX_RX_FILE="$KERNEL_T7XX_DIR/t7xx_hif_dpmaif_rx.c"
             if ! grep -Fq 'while (i--)' "$KERNEL_T7XX_RX_FILE"; then
               echo "❌ 684 T7xx RX 回收修复未进入实际内核源码"
@@ -833,7 +846,7 @@ jobs:
           retention-days: 30
 
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: fm350-pcie-${{ github.run_number }}
           name: ImmortalWrt x86 FM350-GL PCIe

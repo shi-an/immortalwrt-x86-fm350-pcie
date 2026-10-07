@@ -30,13 +30,14 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 
 ## T7xx 内核补丁
 
-- `681-net-gro-fix-double-aggregation-flush-marked-skbs.patch`：防止 UDP fraglist GRO 的 flush 标记被重复聚合。
+- `681-net-gro-fix-double-aggregation-flush-marked-skbs.patch`：防止 UDP fraglist GRO 的 flush 标记被重复聚合。新版 Linux 6.6 已包含该修复，680 不再搬移 GRO 函数时 CI 跳过此补丁，仍校验实际内核源码中的防护。
 - `682-net-wwan-t7xx-keep-tx-ring-moving-on-invalid-skb.patch`：拒绝不在已提交描述符区间内的硬件 TX 读指针，防止旧 completion 反复释放已经清空的 skb bookkeeping。
 - `683-net-gro-check-linear-data-before-fraglist-pull.patch`：在 fraglist GRO 调用 `skb_pull()` 前验证线性数据，不满足时丢弃该次聚合，避免 malformed skb 进入 UDP GSO 分段路径。
 - `684-net-wwan-t7xx-fix-rx-buf-alloc-off-by-one.patch`：记录 T7xx RX 缓冲分配失败路径的 off-by-one 修复；当前 Linux 6.6 上游源码已包含该修复，CI 不重复安装。
 - `686-net-udp-gro-validate-socket-length.patch`：补齐 Linux 6.6 UDP socket GRO 入口的长度校验，拒绝 malformed skb 进入 fraglist GSO 分段路径。
 - `688-net-gso-reject-missing-fraglist-entry.patch`：在 `skb_segment()` 处理完最后一个 fraglist 项后验证链表仍存在，拒绝畸形长度元数据触发的第二次空指针解引用；不影响合法 fraglist GRO。
 - `689-net-gso-reject-empty-fraglist-segment-list.patch`：在 `skb_segment_list()` 入口拒绝空 `frag_list`，避免 UDP fraglist 完成路径把单个 skb 当成分段链表访问；不影响合法 fraglist GRO。
+- `690-net-wwan-t7xx-ratelimit-tx-full-log.patch`：限制 TX 队列满日志频率，保留队列停止/唤醒逻辑，不改变 GRO 或 TX 吞吐路径。
 
 `682` 是异常 completion 的遏制与诊断措施，不代表已经修复 FM350-GL、PCIe 链路或模组固件导致异常读指针的根因。
 

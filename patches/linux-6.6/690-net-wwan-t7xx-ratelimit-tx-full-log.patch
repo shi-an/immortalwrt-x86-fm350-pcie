@@ -1,0 +1,34 @@
+From: immortalwrt-x86-64-fm350-pcie <noreply@local>
+Subject: [PATCH] net: wwan: t7xx: rate-limit TX queue full log
+
+The TX full notification can be delivered repeatedly while the modem is
+not returning completions.  The unbounded netdev_err() call then floods the
+kernel log and obscures the first diagnostic message.
+
+Keep stopping the netdev queue as before, but rate-limit the message.  This
+does not change TX queue flow control or the GRO data path.
+
+---
+ drivers/net/wwan/t7xx/t7xx_netdev.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+--- a/drivers/net/wwan/t7xx/t7xx_netdev.c
++++ b/drivers/net/wwan/t7xx/t7xx_netdev.c
+@@ -25,6 +25,7 @@
+ #include <linux/ip.h>
+ #include <linux/kernel.h>
+ #include <linux/list.h>
++#include <linux/net.h>
+ #include <linux/netdev_features.h>
+ #include <linux/netdevice.h>
+ #include <linux/pm_runtime.h>
+@@ -451,7 +452,8 @@ static void t7xx_ccmni_queue_tx_full_notify(struct t7xx_ccmni_ctrl *ctlb, int qno)
+ 	struct netdev_queue *net_queue;
+ 
+ 	if (atomic_read(&ccmni->usage) > 0) {
+-		netdev_err(ccmni->dev, "TX queue %d is full\n", qno);
++		if (net_ratelimit())
++			netdev_err(ccmni->dev, "TX queue %d is full\n", qno);
+ 		net_queue = netdev_get_tx_queue(ccmni->dev, qno);
+ 		netif_tx_stop_queue(net_queue);
+ 	}
