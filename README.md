@@ -25,6 +25,7 @@
 - UPnP
 - EtherWake
 - Daed
+- SQM / CAKE，以及 CAKE-autorate（预装，配置后启用）
 
 Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触发工作流时按需启用。
 
@@ -50,6 +51,25 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 ## 崩溃日志
 
 镜像固定包含 `kmod-netconsole`。模块会自动加载，但接收端的 LAN IP 和 MAC 必须在复现前通过 `rmmod netconsole` 后的 `modprobe netconsole netconsole=...` 设置，不能使用固定的通用目标地址。
+
+## CAKE-autorate
+
+固件预装 [CAKE-autorate](https://github.com/lynxthecat/cake-autorate/tree/v3.2.2) 稳定版 `3.2.2` 及 `bash`、`fping` 依赖，根据流量和延迟动态调整 CAKE 带宽，适用于 FM350-GL 等带宽波动的蜂窝线路。源码版本和 SHA256 固定在本地软件包中。
+
+默认 `/etc/config/cake-autorate` 的 `main.enabled=0`，配置好线路后再开启：
+
+1. 在 LuCI 的 SQM 页面为实际 WAN 接口配置并启用 CAKE；用 `tc qdisc show` 确认上行和 IFB 下行接口已有 `cake` 队列。
+2. 编辑 `/etc/cake-autorate/config.primary.sh`，设置 `ul_if`、`dl_if` 以及各自的最小、基础、最大带宽（`min_*`、`base_*`、`max_*_shaper_rate_kbps`，单位 Kbit/s）。文件中的接口和速率是上游示例，需要按实测修改；`reflectors` 应选用该线路可稳定响应的探测地址，其他参数参考 `/usr/lib/cake-autorate/defaults.sh`。
+3. 执行以下命令启用服务和开机启动：
+
+```sh
+uci set cake-autorate.main.enabled='1'
+uci commit cake-autorate
+/etc/init.d/cake-autorate enable
+/etc/init.d/cake-autorate restart
+```
+
+修改参数后重启服务生效；运行日志位于 `/var/log/cake-autorate.primary.log`。`/etc/cake-autorate/` 和 UCI 开关配置会随系统配置备份保留。
 
 ## 构建与下载
 

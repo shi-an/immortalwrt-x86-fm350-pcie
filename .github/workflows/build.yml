@@ -144,9 +144,9 @@ jobs:
           path: |
             ${{ env.SOURCE_DIR }}/dl
             ~/.ccache
-          key: ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch', 'package/**') }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch') }}-
+            ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-${{ steps.upstream.outputs.revision }}-${{ hashFiles('x86.extra.config', '.github/workflows/build.yml', 'patches/linux-6.6/*.patch', 'package/**') }}-
             ${{ runner.os }}-fm350-pcie-${{ env.REPO_BRANCH }}-
 
       - name: 生成插件配置
@@ -288,6 +288,7 @@ jobs:
       - name: 克隆第三方源码包
         run: |
           cd "$SOURCE_DIR"
+          cp -a "$GITHUB_WORKSPACE/package/cake-autorate" package/cake-autorate
           CFG="$GITHUB_WORKSPACE/config/plugins.json"
 
           is_enabled() {
@@ -611,7 +612,7 @@ jobs:
           verify_enabled_pkg "FM350-GL mbimcli" "mbim-utils" "enable_mtk_t7xx"
 
           for pkg in irqbalance ethtool kmod-netconsole smartmontools pciutils usbutils parted resize2fs losetup \
-            luci-app-sqm sqm-scripts kmod-sched kmod-sched-cake kmod-tcp-bbr; do
+            luci-app-sqm sqm-scripts cake-autorate bash fping kmod-sched kmod-sched-cake kmod-tcp-bbr; do
             verify_static_pkg "$pkg"
           done
 
@@ -797,6 +798,7 @@ jobs:
           echo "🌐 默认 LAN IP: ${{ env.LAN_IP }}" >> artifacts/release_body.md
           echo "" >> artifacts/release_body.md
           echo "**⚙️ 启用的功能:**" >> artifacts/release_body.md
+          echo "- ✅ SQM / CAKE（预装 CAKE-autorate，配置后启用）" >> artifacts/release_body.md
 
           jq -r 'to_entries | map(select(.key | startswith("enable_")) | select(.value == true) | .key | sub("^enable_"; "")) | .[]' config/plugins.json | awk '
             {
