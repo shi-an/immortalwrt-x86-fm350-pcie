@@ -1,0 +1,35 @@
+From: immortalwrt-x86-fm350-pcie <noreply@local>
+Subject: [PATCH] net: wwan: t7xx: initialize MAC header for raw IP RX
+
+T7xx receives raw IP packets in freshly allocated skbs and passes them to
+napi_gro_receive() without initializing mac_header. The allocation leaves
+mac_header at the unset value, 0xffff, while GRO and the receive core derive
+mac_len from the difference between network_header and mac_header.
+
+With 128 bytes of RX headroom this produces a bogus mac_len of 129. An
+ingress mirred redirect to an IFB then calls skb_push_rcsum() with that
+length, moving data one byte before head and triggering skb_under_panic.
+
+Reset the MAC header to the start of the raw IP packet before entering GRO.
+The network header is at the same position, so the derived MAC length is
+zero. This fixes the header metadata without disabling GRO, fraglist GRO,
+checksum offload, or SQM ingress shaping.
+
+This is a local fix, not an upstream backport.
+
+---
+ drivers/net/wwan/t7xx/t7xx_netdev.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+--- a/drivers/net/wwan/t7xx/t7xx_netdev.c
++++ b/drivers/net/wwan/t7xx/t7xx_netdev.c
+@@ -432,6 +432,9 @@ static void t7xx_ccmni_recv_skb(struct t7xx_ccmni_ctrl *ccmni_ctlb, struct sk_buff
+ 	else
+ 		skb->protocol = htons(ETH_P_IP);
+ 
++	/* The modem supplies raw IP packets without a MAC header. */
++	skb_reset_mac_header(skb);
++
+ 	skb_len = skb->len;
+ 	napi_gro_receive(napi, skb);
+ 	net_dev->stats.rx_packets++;

@@ -39,6 +39,7 @@ Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触
 - `688-net-gso-reject-missing-fraglist-entry.patch`：在 `skb_segment()` 处理完最后一个 fraglist 项后验证链表仍存在，拒绝畸形长度元数据触发的第二次空指针解引用；不影响合法 fraglist GRO。
 - `689-net-gso-reject-empty-fraglist-segment-list.patch`：在 `skb_segment_list()` 入口拒绝空 `frag_list`，避免 UDP fraglist 完成路径把单个 skb 当成分段链表访问；不影响合法 fraglist GRO。
 - `690-net-wwan-t7xx-ratelimit-tx-full-log.patch`：限制 TX 队列满日志频率，保留队列停止/唤醒逻辑，不改变 GRO 或 TX 吞吐路径。
+- `691-net-wwan-t7xx-initialize-raw-ip-mac-header.patch`：本仓库修复。在 T7xx 原始 IP 接收入口、GRO 之前初始化 MAC 头位置，使无二层头的包得到正确的零 MAC 头长度，修复 SQM 下行重定向到 IFB 时 `tcf_mirred_act → skb_push → skb_under_panic` 的越界崩溃；保留 GRO、fraglist GRO 和校验和卸载。
 
 `682` 是异常 completion 的遏制与诊断措施，不代表已经修复 FM350-GL、PCIe 链路或模组固件导致异常读指针的根因。
 
