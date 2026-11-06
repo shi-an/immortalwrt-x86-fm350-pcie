@@ -27,7 +27,7 @@
 - Daed
 - SQM / CAKE，以及 CAKE-autorate（预装，配置后启用）
 
-Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触发工作流时按需启用。
+Lucky、AT WebServer、DockerMan 和 OpenClash 默认关闭，仍可在手动触发工作流时按需启用。Daed 与 OpenClash 可以同时选择安装。
 
 ## T7xx 内核补丁
 

@@ -176,11 +176,6 @@ jobs:
           ENABLE_DAED=$(normalize_bool "${{ inputs.enable_daed }}")
           ENABLE_OPENCLASH=$(normalize_bool "${{ inputs.enable_openclash }}")
 
-          if [ "$ENABLE_DAED" = "true" ] && [ "$ENABLE_OPENCLASH" = "true" ]; then
-            echo "❌ daed 和 OpenClash 建议二选一，请关闭其中一个"
-            exit 1
-          fi
-
           jq -n \
             --argjson enable_bandix "$ENABLE_BANDIX" \
             --argjson enable_netdata "$ENABLE_NETDATA" \
